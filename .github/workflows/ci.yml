@@ -1,0 +1,124 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  server:
+    name: server (${{ matrix.compiler }}, ${{ matrix.build }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { compiler: gcc, cxx: g++, build: Release, flags: "" }
+          - { compiler: clang, cxx: clang++, build: Release, flags: "" }
+          - { compiler: gcc, cxx: g++, build: Debug, flags: "-DSUPERLOTIS_SANITIZE=ON" }
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y ninja-build
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja
+          -DCMAKE_CXX_COMPILER=${{ matrix.cxx }}
+          -DCMAKE_BUILD_TYPE=${{ matrix.build }}
+          -DSUPERLOTIS_WERROR=ON ${{ matrix.flags }}
+      - name: Build
+        run: cmake --build build --parallel
+      - name: Test
+        env:
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: ctest --test-dir build --output-on-failure --parallel 4
+
+  thread-sanitizer:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y ninja-build
+      - run: >
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_CXX_FLAGS=-fsanitize=thread -DCMAKE_EXE_LINKER_FLAGS=-fsanitize=thread
+      - run: cmake --build build --parallel
+      - run: ctest --test-dir build --output-on-failure
+        env:
+          TSAN_OPTIONS: halt_on_error=1
+
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: clang-format
+        run: clang-format --dry-run --Werror $(git ls-files 'server/*.cpp' 'server/*.hpp')
+      - name: Install Python tooling
+        run: pip install -e "python[dev]"
+      - name: ruff
+        working-directory: python
+        run: |
+          ruff check .
+          ruff format --check .
+      - name: mypy
+        working-directory: python
+        run: mypy
+
+  python:
+    name: python ${{ matrix.python }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: pip install -e "python[dev]"
+      - name: Unit tests (fake server)
+        working-directory: python
+        run: pytest -m "not integration" --cov=superlotis --cov-report=term-missing
+
+  integration:
+    name: integration (python client <-> slcamd)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: sudo apt-get update && sudo apt-get install -y ninja-build
+      - run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSUPERLOTIS_BUILD_TESTS=OFF
+      - run: cmake --build build --parallel
+      - run: pip install -e "python[dev]"
+      - name: Integration tests against the real server
+        working-directory: python
+        env:
+          SLCAMD_BIN: ${{ github.workspace }}/build/server/slcamd
+        run: pytest -m integration -v
+
+  package:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install build twine
+      - run: python -m build python
+      - run: twine check python/dist/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: python-dist
+          path: python/dist/
