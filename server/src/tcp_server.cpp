@@ -118,9 +118,11 @@ void TcpServer::stop() {
         const char b = 'x';
         [[maybe_unused]] const ssize_t n = ::write(wake_pipe_[1], &b, 1);
     }
+    // Close only the read side: idle clients see EOF and disconnect, while a
+    // client whose exposure is still running can still receive its reply.
     const std::lock_guard<std::mutex> lock(clients_mutex_);
     for (auto& c : clients_)
-        if (!c->done.load() && c->fd >= 0) ::shutdown(c->fd, SHUT_RDWR);
+        if (!c->done.load() && c->fd >= 0) ::shutdown(c->fd, SHUT_RD);
 }
 
 int TcpServer::active_clients() const {

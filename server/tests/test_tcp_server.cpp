@@ -180,3 +180,20 @@ TEST_F(ServerTest, TokenAuthentication) {
     Conn other(server->port());
     EXPECT_EQ(other.ask("status").rfind("ERR unauthorized", 0), 0u) << "auth is per-connection";
 }
+
+TEST_F(ServerTest, StopLetsInFlightExposureFinishAndReply) {
+    cfg.simulator.time_scale = 1.0;
+    cfg.simulator.readout_s = 0.0;
+    cfg.simulator.cooldown_tau_s = 0.001;
+    start();
+    Conn exposer(server->port());
+    Conn idle(server->port());
+    EXPECT_EQ(idle.ask("ping"), "OK pong");
+    exposer.send_raw("expose exptime=1\n");
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    server->stop();
+    EXPECT_EQ(idle.line(), "<eof>") << "idle clients are disconnected";
+    const std::string reply = exposer.line();
+    EXPECT_EQ(reply.rfind("OK file=", 0), 0u) << reply;
+    thread.join();
+}

@@ -52,7 +52,7 @@ with CameraClient("camera-pc", token="...") as cam:
   values are rejected at startup with `file:line` errors (`slcamd --check-config`).
 * **Production deployment**: systemd unit with hardening, graceful SIGTERM handling
   (in-progress exposures finish and are saved), structured logs to journald.
-* **Tested at every layer**: 59 C++ tests (unit + real-socket end-to-end), 55 Python
+* **Tested at every layer**: 60 C++ tests (unit + real-socket end-to-end), 55 Python
   tests, and a contract suite that runs the Python client against both an in-memory
   fake and the real server. CI runs gcc + clang with `-Werror`, ASan/UBSan, TSan,
   clang-format, ruff, mypy `--strict`, and Python 3.9–3.13.
