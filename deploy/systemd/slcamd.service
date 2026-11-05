@@ -1,0 +1,27 @@
+[Unit]
+Description=SuperLOTIS camera control server (slcamd)
+Documentation=https://github.com/jacobvider/superlotis-camera/blob/main/docs/deployment.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=slcam
+Group=slcam
+ExecStartPre=/usr/local/bin/slcamd --config /etc/superlotis/slcamd.conf --check-config
+ExecStart=/usr/local/bin/slcamd --config /etc/superlotis/slcamd.conf
+Restart=on-failure
+RestartSec=5
+# Give an in-progress exposure time to finish and be written to disk.
+TimeoutStopSec=300
+KillSignal=SIGTERM
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/superlotis
+
+[Install]
+WantedBy=multi-user.target
